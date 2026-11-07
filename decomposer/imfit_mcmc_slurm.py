@@ -29,6 +29,7 @@ def run_galaxy(
     burnin_length: int,
     nchains: int,
     append: bool,
+    overwrite: bool,
 ) -> None:
     galaxy = Path(galaxy_path)
     failed_bands = []
@@ -42,9 +43,8 @@ def run_galaxy(
 
         output_root = f"{fit_type}_{band}_mcmc"
         existing_chains = list(galaxy.glob(f"{output_root}.*.txt"))
-        if existing_chains and not append:
-            failed_bands.append(band)
-            print(f"Refusing to overwrite existing {band}-band chains; use --append to continue.", flush=True)
+        if existing_chains and not append and not overwrite:
+            print(f"Skipping {band}: existing MCMC chains found; use --append or --overwrite.", flush=True)
             continue
 
         command = [
@@ -77,7 +77,7 @@ def run_galaxy(
             failed_bands.append(band)
 
     if failed_bands:
-        raise RuntimeError(f"IMFIT-MCMC failed or refused existing chains for galaxy {os.path.basename(galaxy_path)} for bands: {', '.join(failed_bands)}")
+        raise print(f"IMFIT-MCMC failed for galaxy {os.path.basename(galaxy_path)} for bands: {', '.join(failed_bands)}")
 
 
 def submit(args: argparse.Namespace) -> None:
@@ -111,6 +111,7 @@ def submit(args: argparse.Namespace) -> None:
         burnin_length=args.burnin_length,
         nchains=args.nchains or 0,
         append=args.append,
+        overwrite=args.overwrite,
     )
     jobs = executor.map_array(worker, [str(galaxy) for galaxy in galaxies])
     print(f"Submitted {len(jobs)} galaxies to Slurm job array {jobs[0].job_id}")
@@ -127,7 +128,9 @@ def main() -> None:
     parser.add_argument("--max-chain-length", type=int, default=100000)
     parser.add_argument("--burnin-length", type=int, default=5000)
     parser.add_argument("--nchains", type=int, help="MCMC chains per band; default is IMFIT-MCMC's choice")
-    parser.add_argument("--append", action="store_true", help="Continue existing MCMC chains")
+    chain_behavior = parser.add_mutually_exclusive_group()
+    chain_behavior.add_argument("--append", action="store_true", help="Continue existing MCMC chains")
+    chain_behavior.add_argument("--overwrite", action="store_true", help="Overwrite existing MCMC chains")
     parser.add_argument("--timeout-min", type=int, default=1440, help="Slurm time limit in minutes")
     parser.add_argument("--mem-gb", type=float, default=8, help="Memory per array task in GB")
     parser.add_argument("--partition", help="Optional Slurm partition")
